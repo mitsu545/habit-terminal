@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Habit Terminal</title>
+    <title>FOCUS LOGGER</title>
+    
+    <!-- ホーム画面用のカスタムアイコン（Hを回避するモダンなスマホロックデザイン） -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' fill='%23050505'/%3E%3Crect x='78' y='48' width='100' height='160' rx='16' fill='none' stroke='%2300ff41' stroke-width='12'/%3E%3Crect x='108' y='120' width='40' height='30' rx='4' fill='none' stroke='%2300ff41' stroke-width='10'/%3E%3Cpath d='M116 120 V104 A12 12 0 0 1 140 104 V120' fill='none' stroke='%2300ff41' stroke-width='10' stroke-linecap='round'/%3E%3Cline x1='112' y1='184' x2='144' y2='184' stroke='%2300ff41' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E">
+
     <!-- 精密な等幅フォント -->
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -113,7 +117,16 @@
     <!-- HEADER -->
     <header class="p-4 border-b border-[#222] bg-black">
         <div class="flex justify-between items-center mb-4">
-            <h1 class="mono font-bold text-xs tracking-tighter text-[#888]">HABIT TERMINAL LOGGER</h1>
+            <h1 class="mono font-bold text-xs tracking-tighter text-[#888] flex items-center gap-2">
+                <!-- スマホロックアイコン -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                    <rect x="9" y="11" width="6" height="4" rx="1"></rect>
+                    <path d="M10 11V9a2 2 0 1 1 4 0v2"></path>
+                    <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                </svg>
+                FOCUS LOGGER
+            </h1>
             <div class="flex items-center gap-3">
                 <div id="ui-clock" class="mono text-[10px] text-emerald-500">00:00:00</div>
                 <!-- 同期ボタン -->
@@ -161,9 +174,15 @@
                 </div>
             </div>
 
-            <!-- 本日記録済みステータス (1日複数回対応) -->
-            <div id="today-status" class="mb-4 text-center text-xs mono text-emerald-500 hidden border border-[#003310] bg-[#001100] py-2 rounded-sm">
+            <!-- 本日記録済みステータス (1日複数回対応 ＆ 取り消し機能) -->
+            <div id="today-status" class="mb-4 text-center text-xs mono text-emerald-500 hidden border border-[#003310] bg-[#001100] p-3 rounded-sm relative">
                 本日 <span id="ui-today-min" class="font-bold text-white text-sm">0</span> 分 記録済み (上乗せ可能)
+                
+                <!-- 誤入力修正用ボタン -->
+                <button onclick="resetTodayRecord()" class="mt-3 text-[10px] text-[#888] border border-[#333] bg-[#050505] px-3 py-2 rounded-sm hover:text-white hover:border-[#666] transition-colors block mx-auto flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    [ 本日の記録を取り消す ]
+                </button>
             </div>
 
             <div id="record-section" class="mb-4">
@@ -298,7 +317,7 @@
     };
 
     // セーブデータ初期化
-    let appData = JSON.parse(localStorage.getItem('habit_terminal_data_v4')) || {
+    let appData = JSON.parse(localStorage.getItem('habit_terminal_data_v5')) || {
         streak: 0,
         totalMinutes: 0,
         records: [], // { date: 'YYYY-MM-DD', min: 30, lvl: 2 }
@@ -311,7 +330,7 @@
     }
     
     function save() { 
-        localStorage.setItem('habit_terminal_data_v4', JSON.stringify(appData)); 
+        localStorage.setItem('habit_terminal_data_v5', JSON.stringify(appData)); 
     }
 
     function updateClock() {
@@ -321,6 +340,28 @@
         });
     }
     setInterval(updateClock, 1000);
+
+    // 継続記録の正確な再計算（取り消し時などに使用）
+    function recalcStreak() {
+        if (appData.records.length === 0) {
+            appData.streak = 0;
+            return;
+        }
+        let currentStreak = 1;
+        // 後ろから遡って連続日数をカウント
+        for (let i = appData.records.length - 1; i > 0; i--) {
+            const d1 = new Date(appData.records[i].date);
+            const d2 = new Date(appData.records[i-1].date);
+            const diffTime = Math.abs(d1 - d2);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) {
+                currentStreak++;
+            } else {
+                break;
+            }
+        }
+        appData.streak = currentStreak;
+    }
 
     // 継続記録のチェック
     function checkStreak() {
@@ -368,17 +409,39 @@
             showModal('データ更新', `本日の記録に <span class="mono text-emerald-400 text-lg">${mins}</span> 分を追加しました。<br>本日の合計: ${appData.records[existingRecordIndex].min} 分`);
         } else {
             // 今日の初記録の場合 -> 新規追加
-            let last = appData.lastDate ? new Date(appData.lastDate) : null;
-            let yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-            
-            if (!last || last < yesterday) appData.streak = 1;
-            else appData.streak++;
-
             appData.records.push({ date: today, min: mins, lvl: calculateLevel(mins) });
             appData.lastDate = today;
+            recalcStreak(); // ストリーク再計算
             save();
             updateUI();
             showModal('データ保存', `封印時間: <span class="mono text-emerald-400 text-lg">${mins}</span> 分<br>データベースに記録されました。`);
+        }
+    }
+
+    // 誤入力の取り消し処理
+    function resetTodayRecord() {
+        const today = getDateStr(new Date());
+        const index = appData.records.findIndex(r => r.date === today);
+        
+        if (index !== -1) {
+            // トータル時間から本日の分を引く
+            appData.totalMinutes -= appData.records[index].min;
+            // 配列から本日のデータを削除
+            appData.records.splice(index, 1);
+            
+            // lastDateを前回の記録日に戻す
+            if (appData.records.length > 0) {
+                appData.lastDate = appData.records[appData.records.length - 1].date;
+            } else {
+                appData.lastDate = null;
+            }
+            
+            // ストリークの正確な再計算
+            recalcStreak();
+            
+            save();
+            updateUI();
+            showModal('データ修正', '本日の記録を完全に取り消しました。<br>再度、正しい時間を入力できます。');
         }
     }
 
@@ -404,7 +467,7 @@
         document.getElementById('ui-progress-days').innerText = completedDays;
         document.getElementById('ui-progress-pct').innerText = ((completedDays / TOTAL_DAYS) * 100).toFixed(1);
 
-        // 本日のステータス表示 (複数回対応)
+        // 本日のステータス表示 (複数回対応 ＆ 取り消し機能)
         const today = getDateStr(new Date());
         const todayRecord = appData.records.find(r => r.date === today);
         const statusBox = document.getElementById('today-status');
@@ -467,7 +530,7 @@
 
     // --- Modal Control ---
     function showModal(title, body) {
-        document.getElementById('modal-title').innerText = title;
+        document.getElementById('modal-title').innerHTML = title;
         document.getElementById('modal-body').innerHTML = body;
         document.getElementById('modal-overlay').style.display = 'flex';
     }
@@ -497,7 +560,7 @@
         status.innerText = 'Uploading...'; status.className = 'text-[10px] text-center mb-4 h-4 text-emerald-500 animate-pulse';
 
         try {
-            // POSTリクエストでJSONを送信する想定
+            // POSTリクエストでJSONを送信
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
