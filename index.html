@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Habit Terminal</title>
+    <!-- 精密な等幅フォント -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --terminal-bg: #050505;
+            --terminal-card: #0f0f0f;
+            --terminal-green: #00ff41; /* マトリックス・グリーン */
+            --terminal-green-dim: rgba(0, 255, 65, 0.2);
+            --terminal-border: #222;
+        }
+
+        body {
+            background-color: var(--terminal-bg);
+            color: #eee;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* スキャンライン効果 */
+        .scanline {
+            width: 100%; height: 100%;
+            position: fixed; top: 0; left: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none; z-index: 100; opacity: 0.3;
+        }
+
+        .terminal-border { border: 1px solid var(--terminal-border); }
+        .terminal-card { background-color: var(--terminal-card); border: 1px solid var(--terminal-border); }
+        
+        /* 階調表現用のヒートマップカラー */
+        .lvl-0 { background-color: #111; }
+        .lvl-1 { background-color: #003310; border: 1px solid #005510; }
+        .lvl-2 { background-color: #006620; border: 1px solid #008820; }
+        .lvl-3 { background-color: #009930; border: 1px solid #00bb30; }
+        .lvl-4 { background-color: var(--terminal-green); box-shadow: 0 0 10px var(--terminal-green-dim); }
+        .lvl-miss { background-color: #300; border: 1px solid #500; } 
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: terminalIn 0.2s ease-out; }
+        @keyframes terminalIn {
+            from { opacity: 0; filter: brightness(2); }
+            to { opacity: 1; filter: brightness(1); }
+        }
+
+        .btn-record {
+            transition: all 0.2s;
+            border: 1px solid var(--terminal-border);
+            background: #000;
+            cursor: pointer;
+        }
+        .btn-record:active { transform: scale(0.97); filter: brightness(1.5); }
+        .btn-record:hover { border-color: var(--terminal-green-dim); }
+
+        .btn-sync {
+            background: none; border: 1px solid var(--terminal-border);
+            color: var(--terminal-green); padding: 4px 8px; border-radius: 4px;
+            cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 4px;
+        }
+        .btn-sync:hover { background: var(--terminal-green-dim); }
+
+        /* ボトムナビゲーション */
+        .bottom-nav {
+            position: absolute; bottom: 0; width: 100%;
+            background-color: var(--terminal-bg);
+            border-top: 1px solid var(--terminal-border);
+            display: flex; justify-content: space-around; align-items: center;
+            padding: 0; z-index: 50;
+            height: calc(65px + env(safe-area-inset-bottom));
+        }
+        .nav-btn {
+            background: none; border: none; color: #555;
+            cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; width: 100%;
+            transition: all 0.2s;
+            border-top: 2px solid transparent;
+        }
+        .nav-btn:hover { color: #888; background: rgba(255,255,255,0.02); }
+        .nav-btn.active { 
+            color: var(--terminal-green); 
+            border-top: 2px solid var(--terminal-green); 
+            background: linear-gradient(to bottom, rgba(0,255,65,0.08), transparent); 
+        }
+        .nav-icon { margin-bottom: 6px; }
+        
+        .input-dark {
+            background: #000; border: 1px solid #333; color: var(--terminal-green);
+            padding: 8px; width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+        }
+        .input-dark:focus { outline: none; border-color: var(--terminal-green); }
+    </style>
+</head>
+<body class="p-0 m-0">
+
+<div class="scanline"></div>
+
+<div id="app-container" class="max-w-md mx-auto h-screen flex flex-col relative">
+
+    <!-- HEADER -->
+    <header class="p-4 border-b border-[#222] bg-black">
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="mono font-bold text-xs tracking-tighter text-[#888]">HABIT TERMINAL LOGGER</h1>
+            <div class="flex items-center gap-3">
+                <div id="ui-clock" class="mono text-[10px] text-emerald-500">00:00:00</div>
+                <!-- 同期ボタン -->
+                <button class="btn-sync text-[10px] mono" onclick="openSyncModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    SYNC
+                </button>
+            </div>
+        </div>
+        <div class="flex justify-between items-end">
+            <div>
+                <div class="text-[10px] font-bold text-[#666] tracking-widest mb-1">累計時間</div>
+                <div class="mono text-2xl font-bold text-white flex items-center" id="ui-total-time">
+                    0h 0m
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-[10px] font-bold text-[#666] tracking-widest mb-1">継続記録</div>
+                <div class="mono text-xl font-bold text-emerald-500">
+                    <span id="ui-streak">0</span> <span class="text-xs text-[#888]">日</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 overflow-y-auto pb-24">
+        
+        <!-- TAB 1: RECORD (記録) -->
+        <div id="tab-record" class="tab-content active p-4">
+            <div class="terminal-card p-4 mb-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-[10px] text-[#666] mb-1">現在の目標達成率</div>
+                        <div class="mono text-lg flex items-baseline gap-1">
+                            <span id="ui-progress-pct" class="text-white">0.0</span><span class="text-[10px] text-[#888]">%</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-[#666] mb-1">完了日数</div>
+                        <div class="mono text-lg flex items-baseline gap-1">
+                            <span id="ui-progress-days" class="text-white">0</span><span class="text-[10px] text-[#888]">/ 66</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 本日記録済みステータス (1日複数回対応) -->
+            <div id="today-status" class="mb-4 text-center text-xs mono text-emerald-500 hidden border border-[#003310] bg-[#001100] py-2 rounded-sm">
+                本日 <span id="ui-today-min" class="font-bold text-white text-sm">0</span> 分 記録済み (上乗せ可能)
+            </div>
+
+            <div id="record-section" class="mb-4">
+                <h2 class="text-xs text-emerald-500 mb-4 border-b border-[#222] pb-2 font-bold tracking-widest">データ入力 (本日の封印時間)</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <button class="btn-record p-4 text-left rounded-sm" onclick="record(10)">
+                        <div class="mono text-lg font-bold text-white mb-1">10 <span class="text-[10px] text-[#888]">分</span></div>
+                        <div class="text-[10px] text-[#666]">Level 1 (最小記録)</div>
+                    </button>
+                    <button class="btn-record p-4 text-left rounded-sm" onclick="record(30)">
+                        <div class="mono text-lg font-bold text-white mb-1">30 <span class="text-[10px] text-[#888]">分</span></div>
+                        <div class="text-[10px] text-[#666]">Level 2 (標準記録)</div>
+                    </button>
+                    <button class="btn-record p-4 text-left rounded-sm" onclick="record(60)">
+                        <div class="mono text-lg font-bold text-white mb-1">60 <span class="text-[10px] text-[#888]">分</span></div>
+                        <div class="text-[10px] text-[#666]">Level 3 (推奨記録)</div>
+                    </button>
+                    <button class="btn-record p-4 text-left rounded-sm border-emerald-900" onclick="record(90)">
+                        <div class="mono text-lg font-bold text-emerald-400 mb-1">90 <span class="text-[10px] text-[#888]">分</span></div>
+                        <div class="text-[10px] text-emerald-600">Level 4 (最大記録)</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: ANALYSIS (分析) -->
+        <div id="tab-analysis" class="tab-content p-4">
+            <div class="terminal-card p-4 mb-4">
+                <div class="flex justify-between items-center mb-4 border-b border-[#222] pb-2">
+                    <h2 class="text-xs text-emerald-500 font-bold tracking-widest">稼働グリッド (66日)</h2>
+                </div>
+                <!-- 66 Days Grid -->
+                <div class="grid grid-cols-11 gap-[2px] mb-2" id="ui-grid">
+                    <!-- JSで生成 -->
+                </div>
+                <div class="flex justify-end gap-1 mt-3 text-[10px] text-[#666] items-center">
+                    <span>Less</span>
+                    <div class="w-3 h-3 bg-[#111]"></div>
+                    <div class="w-3 h-3 bg-[#003310]"></div>
+                    <div class="w-3 h-3 bg-[#006620]"></div>
+                    <div class="w-3 h-3 bg-[#009930]"></div>
+                    <div class="w-3 h-3 bg-[#00ff41]"></div>
+                    <span>More</span>
+                </div>
+            </div>
+
+            <div class="terminal-card p-4">
+                <h2 class="text-xs text-emerald-500 mb-4 border-b border-[#222] pb-2 font-bold tracking-widest">直近の推移 (最大20日)</h2>
+                <div class="flex items-end gap-1 h-32 border-l border-b border-[#333] pl-2 pt-2" id="ui-chart">
+                    <!-- JSで簡易棒グラフ生成 -->
+                </div>
+                <div class="flex justify-between mt-2 text-[10px] text-[#666]">
+                    <span>過去</span>
+                    <span>最新</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FOOTER NAV -->
+    <nav class="bottom-nav">
+        <button class="nav-btn active flex-1 border-r border-[#222]" onclick="switchTab('record', this)">
+            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            <span class="text-[10px] tracking-widest font-bold mono">RECORD</span>
+        </button>
+        <button class="nav-btn flex-1" onclick="switchTab('analysis', this)">
+            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span class="text-[10px] tracking-widest font-bold mono">ANALYSIS</span>
+        </button>
+    </nav>
+
+    <!-- 通常モーダル -->
+    <div id="modal-overlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center" style="display: none;">
+        <div class="terminal-card p-6 w-[90%] max-w-sm text-center relative z-10 border-emerald-500 shadow-[0_0_20px_rgba(0,255,65,0.2)]">
+            <div class="text-sm text-emerald-500 mb-4 font-bold tracking-widest" id="modal-title">システム通知</div>
+            <div class="text-sm mb-6 leading-relaxed text-[#ccc]" id="modal-body">メッセージ</div>
+            <button class="btn-record w-full py-3 text-xs tracking-widest hover:bg-white hover:text-black transition-colors border-emerald-500" onclick="closeModal()">
+                確認
+            </button>
+        </div>
+    </div>
+
+    <!-- クラウド同期(GAS)設定モーダル -->
+    <div id="sync-modal-overlay" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex justify-center items-center" style="display: none;">
+        <div class="terminal-card p-6 w-[90%] max-w-sm relative z-10 border-[#444]">
+            <div class="text-sm text-white mb-4 font-bold tracking-widest flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                CLOUD SYNC (GAS)
+            </div>
+            
+            <div class="mb-4">
+                <label class="text-[10px] text-[#888] mb-1 block">Google Apps Script Web App URL</label>
+                <input type="text" id="gas-url" class="input-dark" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <button class="btn-record py-2 text-xs flex flex-col items-center justify-center gap-1 text-emerald-500 border-emerald-900" onclick="uploadData()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    UPLOAD (Save)
+                </button>
+                <button class="btn-record py-2 text-xs flex flex-col items-center justify-center gap-1 text-orange-400 border-orange-900" onclick="downloadData()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    DOWNLOAD (Load)
+                </button>
+            </div>
+
+            <div id="sync-status" class="text-[10px] text-center mb-4 h-4 text-[#888]"></div>
+
+            <button class="btn-record w-full py-2 text-xs text-[#888]" onclick="closeSyncModal()">閉じる</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const TOTAL_DAYS = 66;
+
+    // 時間とレベルの定義
+    const levels = {
+        10: { lvl: 1 },
+        30: { lvl: 2 },
+        60: { lvl: 3 },
+        90: { lvl: 4 }
+    };
+
+    // セーブデータ初期化
+    let appData = JSON.parse(localStorage.getItem('habit_terminal_data_v4')) || {
+        streak: 0,
+        totalMinutes: 0,
+        records: [], // { date: 'YYYY-MM-DD', min: 30, lvl: 2 }
+        lastDate: null,
+        gasUrl: ""
+    };
+
+    function getDateStr(d) {
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    
+    function save() { 
+        localStorage.setItem('habit_terminal_data_v4', JSON.stringify(appData)); 
+    }
+
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('ui-clock').innerText = now.toLocaleString('ja-JP', { 
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+    }
+    setInterval(updateClock, 1000);
+
+    // 継続記録のチェック
+    function checkStreak() {
+        if (!appData.lastDate) return;
+        const today = getDateStr(new Date());
+        
+        if (appData.lastDate !== today) {
+            let last = new Date(appData.lastDate);
+            let yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+            
+            if (last < yesterday && appData.records.length > 0) {
+                appData.streak = 0;
+                save();
+            }
+        }
+    }
+
+    // レベル計算ロジック
+    function calculateLevel(mins) {
+        if (mins >= 90) return 4;
+        if (mins >= 60) return 3;
+        if (mins >= 30) return 2;
+        if (mins >= 10) return 1;
+        return 1;
+    }
+
+    // 記録処理 (1日複数回対応)
+    function record(mins) {
+        if (appData.records.length >= TOTAL_DAYS && !appData.records.find(r => r.date === getDateStr(new Date()))) {
+            return showModal('目標達成済', '66日間のデータログが完了しています。<br>お疲れ様でした。');
+        }
+
+        const today = getDateStr(new Date());
+        appData.totalMinutes += mins;
+        
+        // 今日のデータが既に存在するか確認
+        const existingRecordIndex = appData.records.findIndex(r => r.date === today);
+
+        if (existingRecordIndex !== -1) {
+            // すでに今日記録している場合 -> 合算してレベル再計算
+            appData.records[existingRecordIndex].min += mins;
+            appData.records[existingRecordIndex].lvl = calculateLevel(appData.records[existingRecordIndex].min);
+            save();
+            updateUI();
+            showModal('データ更新', `本日の記録に <span class="mono text-emerald-400 text-lg">${mins}</span> 分を追加しました。<br>本日の合計: ${appData.records[existingRecordIndex].min} 分`);
+        } else {
+            // 今日の初記録の場合 -> 新規追加
+            let last = appData.lastDate ? new Date(appData.lastDate) : null;
+            let yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+            
+            if (!last || last < yesterday) appData.streak = 1;
+            else appData.streak++;
+
+            appData.records.push({ date: today, min: mins, lvl: calculateLevel(mins) });
+            appData.lastDate = today;
+            save();
+            updateUI();
+            showModal('データ保存', `封印時間: <span class="mono text-emerald-400 text-lg">${mins}</span> 分<br>データベースに記録されました。`);
+        }
+    }
+
+    // タブ切り替え
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+        document.getElementById('tab-' + tabId).classList.add('active');
+        document.querySelectorAll('.nav-btn').forEach(e => e.classList.remove('active'));
+        btn.classList.add('active');
+        updateUI();
+    }
+
+    // UIの描画更新
+    function updateUI() {
+        // --- HEADER & TAB 1 (RECORD) ---
+        document.getElementById('ui-streak').innerText = appData.streak;
+        
+        const h = Math.floor(appData.totalMinutes / 60);
+        const m = appData.totalMinutes % 60;
+        document.getElementById('ui-total-time').innerText = `${h}h ${m}m`;
+
+        const completedDays = appData.records.length;
+        document.getElementById('ui-progress-days').innerText = completedDays;
+        document.getElementById('ui-progress-pct').innerText = ((completedDays / TOTAL_DAYS) * 100).toFixed(1);
+
+        // 本日のステータス表示 (複数回対応)
+        const today = getDateStr(new Date());
+        const todayRecord = appData.records.find(r => r.date === today);
+        const statusBox = document.getElementById('today-status');
+        
+        if (todayRecord) {
+            statusBox.style.display = 'block';
+            document.getElementById('ui-today-min').innerText = todayRecord.min;
+        } else {
+            statusBox.style.display = 'none';
+        }
+
+        // --- TAB 2 (ANALYSIS) ---
+        if(document.getElementById('tab-analysis').classList.contains('active')) {
+            // Grid
+            const grid = document.getElementById('ui-grid');
+            grid.innerHTML = '';
+            for (let i = 0; i < TOTAL_DAYS; i++) {
+                const rec = appData.records[i];
+                let cellClass = 'w-full aspect-square rounded-[2px] transition-colors duration-300';
+                
+                if (rec) {
+                    if (rec.sabotage) cellClass += ' lvl-miss';
+                    else cellClass += ` lvl-${rec.lvl}`;
+                } else {
+                    // 過去日で未記録の場合は暗い赤色にするロジック（簡易版）
+                    cellClass += ' lvl-0';
+                }
+                
+                // 次に入力予定のマスをハイライト (今日まだ記録してない場合)
+                if (i === appData.records.length && !todayRecord) {
+                    cellClass += ' border border-emerald-500 animate-pulse';
+                }
+                
+                grid.innerHTML += `<div class="${cellClass}"></div>`;
+            }
+
+            // Chart (直近20件)
+            const chart = document.getElementById('ui-chart');
+            chart.innerHTML = '';
+            const last20 = appData.records.slice(-20);
+            
+            if (last20.length === 0) {
+                chart.innerHTML = '<div class="text-[#444] text-xs flex items-center justify-center w-full h-full">NO DATA</div>';
+            } else {
+                last20.forEach(r => {
+                    const heightPct = Math.max((r.min / 120) * 100, 5); // 120分を100%基準とする
+                    const barColor = r.sabotage ? 'bg-red-900' : 'bg-emerald-600';
+                    chart.innerHTML += `
+                        <div class="flex-1 flex flex-col justify-end h-full group relative">
+                            <div class="w-full ${barColor} transition-all duration-500" style="height: ${heightPct}%"></div>
+                            <div class="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 mono text-[8px] bg-black px-1 border border-[#333] z-10">
+                                ${r.min}m
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+        }
+    }
+
+    // --- Modal Control ---
+    function showModal(title, body) {
+        document.getElementById('modal-title').innerText = title;
+        document.getElementById('modal-body').innerHTML = body;
+        document.getElementById('modal-overlay').style.display = 'flex';
+    }
+    function closeModal() {
+        document.getElementById('modal-overlay').style.display = 'none';
+    }
+
+    // --- GAS Sync Control ---
+    function openSyncModal() {
+        document.getElementById('gas-url').value = appData.gasUrl || '';
+        document.getElementById('sync-status').innerText = '';
+        document.getElementById('sync-status').className = 'text-[10px] text-center mb-4 h-4 text-[#888]';
+        document.getElementById('sync-modal-overlay').style.display = 'flex';
+    }
+    function closeSyncModal() {
+        appData.gasUrl = document.getElementById('gas-url').value;
+        save();
+        document.getElementById('sync-modal-overlay').style.display = 'none';
+    }
+
+    async function uploadData() {
+        const url = document.getElementById('gas-url').value;
+        const status = document.getElementById('sync-status');
+        if (!url) { status.innerText = 'Error: URLが未設定です'; status.className = 'text-[10px] text-center mb-4 h-4 text-red-500'; return; }
+        
+        appData.gasUrl = url; save();
+        status.innerText = 'Uploading...'; status.className = 'text-[10px] text-center mb-4 h-4 text-emerald-500 animate-pulse';
+
+        try {
+            // POSTリクエストでJSONを送信する想定
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: JSON.stringify({ action: 'upload', data: appData })
+            });
+            const result = await response.json();
+            if(result.success) {
+                status.innerText = 'Upload Successful.'; status.classList.remove('animate-pulse');
+            } else {
+                throw new Error('Server returned error');
+            }
+        } catch (e) {
+            console.error(e);
+            status.innerText = 'Upload Error (CORS or Invalid URL).';
+            status.className = 'text-[10px] text-center mb-4 h-4 text-orange-500';
+        }
+    }
+
+    async function downloadData() {
+        const url = document.getElementById('gas-url').value;
+        const status = document.getElementById('sync-status');
+        if (!url) { status.innerText = 'Error: URLが未設定です'; status.className = 'text-[10px] text-center mb-4 h-4 text-red-500'; return; }
+        
+        appData.gasUrl = url; save();
+        status.innerText = 'Downloading...'; status.className = 'text-[10px] text-center mb-4 h-4 text-emerald-500 animate-pulse';
+
+        try {
+            const response = await fetch(url + '?action=download');
+            const result = await response.json();
+            if(result.success && result.data) {
+                appData = result.data;
+                save(); updateUI();
+                status.innerText = 'Download Successful. Data updated.'; status.classList.remove('animate-pulse');
+            } else {
+                throw new Error('Invalid data format');
+            }
+        } catch (e) {
+            console.error(e);
+            status.innerText = 'Download Error. Make sure GAS is setup.';
+            status.className = 'text-[10px] text-center mb-4 h-4 text-orange-500';
+        }
+    }
+
+    // 初期化処理
+    updateClock();
+    checkStreak();
+    updateUI();
+</script>
+</body>
+</html>
